@@ -1,2 +1,3 @@
 #!/bin/bash
-g++ -Wall -lcurl main.cpp -o main
+INCLUDE_DIR="external/"
+g++ -I$INCLUDE_DIR -g -Wall -lcurl main.cpp -o main

@@ -336,6 +336,7 @@ static cJSON_bool parse_number(cJSON * const item, parse_buffer * const input_bu
             case '-':
             case 'e':
             case 'E':
+                number_c_string[i] = buffer_at_offset(input_buffer)[i];
                 break;
 
             case '.':
