@@ -18,13 +18,14 @@ typedef int16_t i16;
 typedef int32_t i32;
 typedef int64_t i64;
 
-#include "RestAPI.c"
+#include "RestAPI.cpp"
 
 int main(void)
 {
     rest_api* API = RestAPIInit();
     assert(API);
     rest_api_error_code Error = RegisterUser(API, "Alexey", "123987");
+    // Error = AddTodo(API, "Alexey", "123987", "First todo from client");
 #if 0
     if(Error == REST_API_ERROR_NONE)
     {
