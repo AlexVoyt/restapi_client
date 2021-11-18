@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string>
+#include <vector>
 #include "cJSON.c"
 
 #define ArrayCount(x) (sizeof((x))/sizeof((x)[0]))
@@ -25,7 +26,13 @@ int main(void)
     rest_api* API = RestAPIInit();
     assert(API);
     rest_api_error_code Error = RegisterUser(API, "Alexey", "123987");
-    // Error = AddTodo(API, "Alexey", "123987", "First todo from client");
+    // Error = AddTodo(API, "Alexey", "123987", "Second todo from client");
+    std::vector<todo> Todos;
+    Error = GetTodos(API, "Alexey", "123987", Todos);
+    for(todo& Todo : Todos)
+    {
+        printf("Id: %ld, Description: %s\n", Todo.ID.Value, Todo.Description.c_str());
+    }
 #if 0
     if(Error == REST_API_ERROR_NONE)
     {
@@ -35,8 +42,6 @@ int main(void)
     {
         printf("Failed");
     }
-    curl_easy_setopt(API->Curl, CURLOPT_URL, "https://restapi.alexvoyt.com/todo/");
-    curl_easy_perform(API->Curl);
 #endif
     return 0;
 }

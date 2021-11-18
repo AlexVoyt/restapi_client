@@ -1,5 +1,8 @@
 #ifndef RESTAPI_CPP
 #define RESTAPI_CPP
+// TODO:
+// Even if we are in NoPrint mode, we still writing to request result, so we should attach/detach
+// callback when we are switching modes
 
 // internal struct for callback usage
 struct request_result
@@ -8,11 +11,20 @@ struct request_result
     size_t Size;
 };
 
+enum print_mode
+{
+    PrintMode_NoPrint,
+    PrintMode_ToSTD,
+};
+
 struct rest_api
 {
     CURL* Curl;
     curl_slist* DefaultHeaderList;
+    
     std::string BaseURL;
+
+    print_mode PrintMode;
 
     request_result Response;
 };
@@ -28,8 +40,14 @@ struct user
     user_credentials Credentials;
 };
 
+struct todo_id
+{
+    u64 Value;
+};
+
 struct todo
 {
+    todo_id ID;
     std::string Description;
 };
 
@@ -85,6 +103,8 @@ RestAPIInit(std::string BaseURL = std::string("https://restapi.alexvoyt.com/"))
        curl_easy_setopt(Result->Curl, CURLOPT_HTTPHEADER, Result->DefaultHeaderList);
        curl_easy_setopt(Result->Curl, CURLOPT_WRITEFUNCTION, PrintFormattedCallback);
        curl_easy_setopt(Result->Curl, CURLOPT_WRITEDATA, (void* )&Result->Response);
+
+       Result->PrintMode = PrintMode_ToSTD;
     }
     return Result;
 }
@@ -93,6 +113,22 @@ void
 RestAPIDestroy(rest_api* API)
 {
     free(API);
+}
+
+void 
+PrintRequestResult(rest_api* API, cJSON* Json)
+{
+    char* StringResult = cJSON_Print(Json);
+    printf("%s\n", StringResult); 
+    free(StringResult);
+}
+
+void 
+PrintRequestResult(rest_api* API)
+{
+    cJSON* Json = cJSON_ParseWithLength(API->Response.Result, API->Response.Size);
+    PrintRequestResult(API, Json);
+    cJSON_Delete(Json);
 }
 
 enum rest_api_error_code
@@ -133,14 +169,15 @@ RegisterUser(rest_api* API, const char* Login, const char* Password)
     curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
     curl_easy_perform(API->Curl);
 
-    cJSON* Result = cJSON_ParseWithLength(API->Response.Result, API->Response.Size);
-    printf("%s\n", cJSON_Print(Result));
+    if(API->PrintMode == PrintMode_ToSTD)
+    {
+        PrintRequestResult(API);
+    }
 
     free(cJSONString);
-    cJSON_Delete(Result);
     cJSON_Delete(Json);
-
     ResetRequestResult(API);
+
     return REST_API_ERROR_NONE;
 }
 
@@ -166,14 +203,15 @@ AddTodo(rest_api* API, const char* Login, const char* Password, const char* Todo
     curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
     curl_easy_perform(API->Curl);
 
-    cJSON* Result = cJSON_ParseWithLength(API->Response.Result, API->Response.Size);
-    printf("%s\n", cJSON_Print(Result));
+    if(API->PrintMode == PrintMode_ToSTD)
+    {
+        PrintRequestResult(API);
+    }
 
-    free(cJSONString);
-    cJSON_Delete(Result);
     cJSON_Delete(Json);
-
+    free(cJSONString);
     ResetRequestResult(API);
+
     return REST_API_ERROR_NONE;
 }
 
@@ -185,5 +223,67 @@ AddTodo(rest_api* API, user_credentials Credentials, todo Todo)
                         Todo.Description.c_str());
 }
 
+rest_api_error_code
+GetTodos(rest_api* API, const char* Login, const char* Password, std::vector<todo>& Todos)
+{
+    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
+    char* cJSONString = cJSON_Print(Json);
+
+    std::string FullRoute = ConstructFullURL(API, std::string("todo/"));
+
+    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
+
+    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "GET");
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
+    curl_easy_perform(API->Curl);
+
+    cJSON* JsonResult = cJSON_ParseWithLength(API->Response.Result, API->Response.Size);
+    cJSON* JsonTodos = cJSON_GetObjectItemCaseSensitive(JsonResult, "todos");
+
+    cJSON* JsonTodo = 0;
+    cJSON_ArrayForEach(JsonTodo, JsonTodos)
+    {
+        cJSON* TodoID = cJSON_GetObjectItemCaseSensitive(JsonTodo, "id");
+        cJSON* TodoDescription = cJSON_GetObjectItemCaseSensitive(JsonTodo, "description");
+
+        todo Todo;
+        Todo.ID.Value = TodoID->valueint;
+        Todo.Description = TodoDescription->valuestring;
+
+        Todos.push_back(Todo);
+    }
+
+    if(API->PrintMode == PrintMode_ToSTD)
+    {
+        PrintRequestResult(API, JsonResult);
+    }
+
+    free(cJSONString);
+    cJSON_Delete(Json);
+    cJSON_Delete(JsonResult);
+    ResetRequestResult(API);
+
+    return REST_API_ERROR_NONE;
+}
+
+rest_api_error_code
+GetTodos(rest_api* API, user_credentials Credentials, std::vector<todo>& Todos)
+{
+    return GetTodos(API, Credentials.Login.c_str(),
+                         Credentials.Password.c_str(),
+                         Todos);
+}
+
+
+/*
+rest_api_error_code
+DeleteTodo(rest_api* API, user_credentials Credentials, todo_id ID)
+{
+    return DeleteTodo(API, Credentials.Login.c_str(),
+                           Credentials.Password.c_str(),
+                           Todo.Description.c_str());
+}
+*/
 
 #endif /* RESTAPI_CPP */
