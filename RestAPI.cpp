@@ -1,9 +1,7 @@
 #ifndef RESTAPI_CPP
 #define RESTAPI_CPP
-//  TODO:
-//  Even if we are in NoPrint mode, we still writing to request result, so we should attach/detach
-//  callback when we are switching modes
-//  TODO: Delete and Edit functions
+//  TODO: Even if we are in NoPrint mode, we still writing to request result, so we should attach/detach
+//        callback when we are switching modes
 
 // internal struct for callback usage
 struct request_result
@@ -113,6 +111,7 @@ RestAPIInit(std::string BaseURL = std::string("https://restapi.alexvoyt.com/"))
 void
 RestAPIDestroy(rest_api* API)
 {
+    ResetRequestResult(API);
     free(API);
 }
 
@@ -164,6 +163,7 @@ RegisterUser(rest_api* API, const char* Login, const char* Password)
 
     std::string FullRoute = ConstructFullURL(API, std::string("user/"));
 
+    // TODO: Should extract this to function
     curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
     curl_easy_setopt(API->Curl, CURLOPT_POST, 1L);
     curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
@@ -286,8 +286,6 @@ DeleteTodo(rest_api* API, const char* Login, const char* Password, todo_id ID)
 
     std::string FullRoute = ConstructFullURL(API, std::string("todo/") + std::to_string(ID.Value));
     
-    printf("%s\n", FullRoute.c_str());
-
     curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
 
     curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "DELETE");
@@ -314,6 +312,44 @@ DeleteTodo(rest_api* API, user_credentials Credentials, todo_id ID)
     return DeleteTodo(API, Credentials.Login.c_str(),
                            Credentials.Password.c_str(),
                            ID);
+}
+
+rest_api_error_code
+EditTodo(rest_api* API, const char* Login, const char* Password, 
+         todo_id ID, const char* NewDescription)
+{
+    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
+    cJSON_AddStringToObject(Json, "description", NewDescription);
+    char* cJSONString = cJSON_Print(Json);
+
+    std::string FullRoute = ConstructFullURL(API, std::string("todo/") + std::to_string(ID.Value));
+    
+    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
+
+    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "PUT");
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
+    curl_easy_perform(API->Curl);
+
+    if(API->PrintMode == PrintMode_ToSTD)
+    {
+        PrintRequestResult(API);
+    }
+
+    free(cJSONString);
+    cJSON_Delete(Json);
+    ResetRequestResult(API);
+
+    return REST_API_ERROR_NONE;
+}
+
+
+rest_api_error_code
+EditTodo(rest_api* API, user_credentials Credentials, todo_id ID, const char* NewDescription)
+{
+    return EditTodo(API, Credentials.Login.c_str(),
+                         Credentials.Password.c_str(),
+                         ID, NewDescription);
 }
 
 

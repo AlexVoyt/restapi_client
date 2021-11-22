@@ -35,9 +35,10 @@ int main(void)
     }
 
     todo ToDelete = {.ID = {.Value = 4}};
-    // ToDelete.ID.Value = 4;
-    printf("%ld\n", ToDelete.ID.Value);
     Error = DeleteTodo(API, "Alexey", "123987", ToDelete.ID);
+
+    todo ToEdit = {.ID = {.Value = 5}};
+    Error = EditTodo(API, "Alexey", "123987", ToEdit.ID, "New description");
 
 #if 0
     if(Error == REST_API_ERROR_NONE)
