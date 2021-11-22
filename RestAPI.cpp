@@ -278,14 +278,43 @@ GetTodos(rest_api* API, user_credentials Credentials, std::vector<todo>& Todos)
 }
 
 
-/*
+rest_api_error_code
+DeleteTodo(rest_api* API, const char* Login, const char* Password, todo_id ID)
+{
+    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
+    char* cJSONString = cJSON_Print(Json);
+
+    std::string FullRoute = ConstructFullURL(API, std::string("todo/") + std::to_string(ID.Value));
+    
+    printf("%s\n", FullRoute.c_str());
+
+    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
+
+    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
+    curl_easy_perform(API->Curl);
+
+    if(API->PrintMode == PrintMode_ToSTD)
+    {
+        PrintRequestResult(API);
+    }
+
+    free(cJSONString);
+    cJSON_Delete(Json);
+    ResetRequestResult(API);
+
+    return REST_API_ERROR_NONE;
+}
+
+
 rest_api_error_code
 DeleteTodo(rest_api* API, user_credentials Credentials, todo_id ID)
 {
     return DeleteTodo(API, Credentials.Login.c_str(),
                            Credentials.Password.c_str(),
-                           Todo.Description.c_str());
+                           ID);
 }
-*/
+
 
 #endif /* RESTAPI_CPP */

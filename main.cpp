@@ -33,6 +33,12 @@ int main(void)
     {
         printf("Id: %ld, Description: %s\n", Todo.ID.Value, Todo.Description.c_str());
     }
+
+    todo ToDelete = {.ID = {.Value = 4}};
+    // ToDelete.ID.Value = 4;
+    printf("%ld\n", ToDelete.ID.Value);
+    Error = DeleteTodo(API, "Alexey", "123987", ToDelete.ID);
+
 #if 0
     if(Error == REST_API_ERROR_NONE)
     {
