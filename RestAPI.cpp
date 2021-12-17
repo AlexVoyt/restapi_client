@@ -1,8 +1,9 @@
 #ifndef RESTAPI_CPP
 #define RESTAPI_CPP
-//  TODO:
-//  Even if we are in NoPrint mode, we still writing to request result, so we should attach/detach
-//  callback when we are switching modes
+
+//  TODO: Even if we are in NoPrint mode, we still writing to request result, so we should attach/detach
+//        callback when we are switching modes
+
 
 // internal struct for callback usage
 struct request_result
@@ -112,6 +113,7 @@ RestAPIInit(std::string BaseURL = std::string("https://restapi.alexvoyt.com/"))
 void
 RestAPIDestroy(rest_api* API)
 {
+    ResetRequestResult(API);
     free(API);
 }
 
@@ -163,6 +165,7 @@ RegisterUser(rest_api* API, const char* Login, const char* Password)
 
     std::string FullRoute = ConstructFullURL(API, std::string("user/"));
 
+    // TODO: Should extract this to function
     curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
     curl_easy_setopt(API->Curl, CURLOPT_POST, 1L);
     curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
