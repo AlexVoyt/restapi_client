@@ -1,7 +1,9 @@
 #ifndef RESTAPI_CPP
 #define RESTAPI_CPP
+
 //  TODO: Even if we are in NoPrint mode, we still writing to request result, so we should attach/detach
 //        callback when we are switching modes
+
 
 // internal struct for callback usage
 struct request_result
