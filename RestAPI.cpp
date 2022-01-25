@@ -21,7 +21,7 @@ enum print_mode
 struct rest_api
 {
     CURL* Curl;
-    curl_slist* DefaultHeaderList;
+    curl_slist* HeaderList;
     
     std::string BaseURL;
 
@@ -98,10 +98,8 @@ RestAPIInit(std::string BaseURL = std::string("https://restapi.alexvoyt.com/"))
     }
     else
     {
-       Result->DefaultHeaderList = curl_slist_append(Result->DefaultHeaderList,
-               "Content-Type: application/json"); 
        Result->BaseURL = BaseURL;
-       curl_easy_setopt(Result->Curl, CURLOPT_HTTPHEADER, Result->DefaultHeaderList);
+       curl_easy_setopt(Result->Curl, CURLOPT_HTTPHEADER, Result->HeaderList);
        curl_easy_setopt(Result->Curl, CURLOPT_WRITEFUNCTION, PrintFormattedCallback);
        curl_easy_setopt(Result->Curl, CURLOPT_WRITEDATA, (void* )&Result->Response);
 
@@ -118,7 +116,7 @@ RestAPIDestroy(rest_api* API)
 }
 
 void 
-PrintRequestResult(rest_api* API, cJSON* Json)
+PrintJsonRequestResult(rest_api* API, cJSON* Json)
 {
     char* StringResult = cJSON_Print(Json);
     printf("%s\n", StringResult); 
@@ -126,10 +124,16 @@ PrintRequestResult(rest_api* API, cJSON* Json)
 }
 
 void 
-PrintRequestResult(rest_api* API)
+PrintFileRequestResult(rest_api* API)
+{
+    printf("%s\n", API->Response.Result); 
+}
+
+void 
+PrintJsonRequestResult(rest_api* API)
 {
     cJSON* Json = cJSON_ParseWithLength(API->Response.Result, API->Response.Size);
-    PrintRequestResult(API, Json);
+    PrintJsonRequestResult(API, Json);
     cJSON_Delete(Json);
 }
 
@@ -137,7 +141,6 @@ enum rest_api_error_code
 {
     REST_API_ERROR_NONE,
     REST_API_ERROR_UNKNOWN,
-    REST_API_USER_REGISTERED,
 };
 
 cJSON* CreateUserCredentialsJSON(const char* Login, const char* Password)
@@ -156,203 +159,72 @@ std::string ConstructFullURL(rest_api* API, std::string Route)
     return Result;
 }
 
-/* Strings should be null-terminated */
-rest_api_error_code
-RegisterUser(rest_api* API, const char* Login, const char* Password)
+void PerformJsonRequest(rest_api* API, const char* Route, const char* Method, const char* JsonData)
 {
-    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
-    char* cJSONString = cJSON_Print(Json);
-
-    std::string FullRoute = ConstructFullURL(API, std::string("user/"));
-
-    // TODO: Should extract this to function
-    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
-    curl_easy_setopt(API->Curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
-    curl_easy_perform(API->Curl);
+    API->HeaderList = curl_slist_append(API->HeaderList, "Content-Type: application/json"); 
+    curl_easy_setopt(API->Curl, CURLOPT_HTTPHEADER, API->HeaderList);
+    curl_easy_setopt(API->Curl, CURLOPT_URL, Route);
+    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, Method);
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, JsonData);
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(JsonData));
+    CURLcode Result = curl_easy_perform(API->Curl);
+    if(Result != CURLE_OK)
+    {
+        printf("curl_easy_perform failed: %s\n", curl_easy_strerror(Result));
+    }
+    curl_slist_free_all(API->HeaderList);
+    API->HeaderList = 0;
 
     if(API->PrintMode == PrintMode_ToSTD)
     {
-        PrintRequestResult(API);
+        PrintJsonRequestResult(API);
     }
 
-    free(cJSONString);
-    cJSON_Delete(Json);
     ResetRequestResult(API);
-
-    return REST_API_ERROR_NONE;
 }
 
-rest_api_error_code
-RegisterUser(rest_api* API, user_credentials Credentials, todo Todo)
+void PerformFileRequest(rest_api* API, const char* Route, const char* Method,
+                        const char* Login, const char* Password, const char* Filename)
 {
-    return RegisterUser(API, Credentials.Login.c_str(),
-                             Credentials.Password.c_str());
-}
+    // TODO: decide smth with limit
+    char RESTLogin[256] = {};
+    char RESTPassword[256] = {};
+    snprintf(RESTLogin, sizeof(RESTLogin), "REST-Login: %s", Login);
+    snprintf(RESTPassword, sizeof(RESTPassword), "REST-Password: %s", Password);
 
-rest_api_error_code
-AddTodo(rest_api* API, const char* Login, const char* Password, const char* TodoDescription)
-{
-    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
-    cJSON_AddStringToObject(Json, "description", TodoDescription);
-    char* cJSONString = cJSON_Print(Json);
-    
-    std::string FullRoute = ConstructFullURL(API, std::string("todo/"));
+    curl_mime* Form = 0;
+    if(Filename)
+    {
+        Form = curl_mime_init(API->Curl);
+        curl_mimepart* Field = curl_mime_addpart(Form);
+        curl_mime_name(Field, "file");
+        curl_mime_filedata(Field, Filename);
 
-    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
-    curl_easy_setopt(API->Curl, CURLOPT_POST, 1L);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
-    curl_easy_perform(API->Curl);
+        curl_easy_setopt(API->Curl, CURLOPT_MIMEPOST, Form);
+    }
+
+    API->HeaderList = curl_slist_append(API->HeaderList, RESTLogin); 
+    API->HeaderList = curl_slist_append(API->HeaderList, RESTPassword); 
+    curl_easy_setopt(API->Curl, CURLOPT_HTTPHEADER, API->HeaderList);
+    curl_easy_setopt(API->Curl, CURLOPT_URL, Route);
+    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, Method);
+    /*
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, JsonData);
+    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(JsonData));
+    */
+    CURLcode Result = curl_easy_perform(API->Curl);
+    if(Result != CURLE_OK)
+    {
+        printf("curl_easy_perform failed: %s\n", curl_easy_strerror(Result));
+    }
+    curl_slist_free_all(API->HeaderList);
+    curl_mime_free(Form);
+    API->HeaderList = 0;
 
     if(API->PrintMode == PrintMode_ToSTD)
     {
-        PrintRequestResult(API);
+         PrintFileRequestResult(API);
     }
-
-    cJSON_Delete(Json);
-    free(cJSONString);
-    ResetRequestResult(API);
-
-    return REST_API_ERROR_NONE;
 }
-
-rest_api_error_code
-AddTodo(rest_api* API, user_credentials Credentials, todo Todo)
-{
-    return AddTodo(API, Credentials.Login.c_str(),
-                        Credentials.Password.c_str(),
-                        Todo.Description.c_str());
-}
-
-rest_api_error_code
-GetTodos(rest_api* API, const char* Login, const char* Password, std::vector<todo>& Todos)
-{
-    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
-    char* cJSONString = cJSON_Print(Json);
-
-    std::string FullRoute = ConstructFullURL(API, std::string("todo/"));
-
-    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
-
-    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "GET");
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
-    curl_easy_perform(API->Curl);
-
-    cJSON* JsonResult = cJSON_ParseWithLength(API->Response.Result, API->Response.Size);
-    cJSON* JsonTodos = cJSON_GetObjectItemCaseSensitive(JsonResult, "todos");
-
-    cJSON* JsonTodo = 0;
-    cJSON_ArrayForEach(JsonTodo, JsonTodos)
-    {
-        cJSON* TodoID = cJSON_GetObjectItemCaseSensitive(JsonTodo, "id");
-        cJSON* TodoDescription = cJSON_GetObjectItemCaseSensitive(JsonTodo, "description");
-
-        todo Todo;
-        Todo.ID.Value = TodoID->valueint;
-        Todo.Description = TodoDescription->valuestring;
-
-        // TODO: emplace_back for perf
-        Todos.push_back(Todo);
-    }
-
-    if(API->PrintMode == PrintMode_ToSTD)
-    {
-        PrintRequestResult(API, JsonResult);
-    }
-
-    free(cJSONString);
-    cJSON_Delete(Json);
-    cJSON_Delete(JsonResult);
-    ResetRequestResult(API);
-
-    return REST_API_ERROR_NONE;
-}
-
-rest_api_error_code
-GetTodos(rest_api* API, user_credentials Credentials, std::vector<todo>& Todos)
-{
-    return GetTodos(API, Credentials.Login.c_str(),
-                         Credentials.Password.c_str(),
-                         Todos);
-}
-
-
-rest_api_error_code
-DeleteTodo(rest_api* API, const char* Login, const char* Password, todo_id ID)
-{
-    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
-    char* cJSONString = cJSON_Print(Json);
-
-    std::string FullRoute = ConstructFullURL(API, std::string("todo/") + std::to_string(ID.Value));
-    
-    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
-
-    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "DELETE");
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
-    curl_easy_perform(API->Curl);
-
-    if(API->PrintMode == PrintMode_ToSTD)
-    {
-        PrintRequestResult(API);
-    }
-
-    free(cJSONString);
-    cJSON_Delete(Json);
-    ResetRequestResult(API);
-
-    return REST_API_ERROR_NONE;
-}
-
-
-rest_api_error_code
-DeleteTodo(rest_api* API, user_credentials Credentials, todo_id ID)
-{
-    return DeleteTodo(API, Credentials.Login.c_str(),
-                           Credentials.Password.c_str(),
-                           ID);
-}
-
-rest_api_error_code
-EditTodo(rest_api* API, const char* Login, const char* Password, 
-         todo_id ID, const char* NewDescription)
-{
-    cJSON* Json = CreateUserCredentialsJSON(Login, Password);
-    cJSON_AddStringToObject(Json, "description", NewDescription);
-    char* cJSONString = cJSON_Print(Json);
-
-    std::string FullRoute = ConstructFullURL(API, std::string("todo/") + std::to_string(ID.Value));
-    
-    curl_easy_setopt(API->Curl, CURLOPT_URL, FullRoute.c_str());
-
-    curl_easy_setopt(API->Curl, CURLOPT_CUSTOMREQUEST, "PUT");
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDS, cJSONString);
-    curl_easy_setopt(API->Curl, CURLOPT_POSTFIELDSIZE, strlen(cJSONString));
-    curl_easy_perform(API->Curl);
-
-    if(API->PrintMode == PrintMode_ToSTD)
-    {
-        PrintRequestResult(API);
-    }
-
-    free(cJSONString);
-    cJSON_Delete(Json);
-    ResetRequestResult(API);
-
-    return REST_API_ERROR_NONE;
-}
-
-
-rest_api_error_code
-EditTodo(rest_api* API, user_credentials Credentials, todo_id ID, const char* NewDescription)
-{
-    return EditTodo(API, Credentials.Login.c_str(),
-                         Credentials.Password.c_str(),
-                         ID, NewDescription);
-}
-
 
 #endif /* RESTAPI_CPP */
